@@ -17,6 +17,9 @@ yarn-error.log*
 coverage/
 dist/
 
+# Windows metadata files
+*.Zone.Identifier
+
 # Tool caches
 .eslintcache
 .cache/
