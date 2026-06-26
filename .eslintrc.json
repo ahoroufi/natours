@@ -1,6 +1,11 @@
 {
   "extends": ["airbnb", "prettier", "plugin:node/recommended"],
   "plugins": ["prettier"],
+  "settings": {
+    "node": {
+      "version": ">=22.0.0"
+    }
+  },
   "rules": {
     "prettier/prettier": "error",
     "spaced-comment": "off",
