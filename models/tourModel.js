@@ -1,6 +1,6 @@
 const pool = require('../database');
 
-exports.find = async queryObj => {
+exports.findAll = async queryObj => {
 const fieldMap = {
   id: 'id',
   name: 'name',
@@ -28,14 +28,18 @@ const operatorMap = {
   const values = [];
 
   Object.keys(queryObj).forEach(key => {
-    const value = queryObj[key];
-    const column = fieldMap[key];
+    const value = queryObj[key];  //price: { gte: '500' }, value = { gte: '500' }
+    const column = fieldMap[key]; // fieldMap[price] => column = 'price'
+
+    if (!column) return;
 
     if (typeof value === 'object' && value !== null) {
-      Object.keys(value).forEach(operator => {
-        values.push(value[operator]);
+      Object.keys(value).forEach(operator => { // key = gte , 
+        if (!operatorMap[operator]) return;
+
+        values.push(value[operator]); //value['gte'] = '500'
         filters.push(`${column} ${operatorMap[operator]} $${values.length}`);
-      });
+      }); // price >= $2
     } else {
       values.push(value);
       filters.push(`${column} = $${values.length}`);
@@ -47,6 +51,32 @@ const operatorMap = {
   if (filters.length > 0) {
     query += ` WHERE ${filters.join(' AND ')}`;
   }
+
+  // Sorting
+  if (sort) {
+    const sortBy = sort
+      .split(',')
+      .map(field => {
+        if (field.startsWith('-')) {
+          const column = fieldMap[field.slice(1)];
+          return column ? `${column} DESC` : null;
+        }
+
+        const column = fieldMap[field];
+        return column ? `${column} ASC` : null;
+      })
+      .filter(Boolean)
+      .join(', ');
+
+    if (sortBy) {
+      query += ` ORDER BY ${sortBy}`;
+    } else {
+      query += ' ORDER BY id';
+    }
+  } else {
+    query += ' ORDER BY id';
+  }
+
 
   query += ' ORDER BY id';
   const result = await pool.query(query, values);

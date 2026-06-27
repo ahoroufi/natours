@@ -4,12 +4,11 @@ exports.getAllTours = async (req, res) => {
 // api/v1/tours?duration[gtn]=5&difficulty=easy
   try {
     // BUILD QUERY
-    // 1) Filtering
+    // 1A) Filtering
     const queryObj = { ...req.query };
     const excludedFields = ['page', 'sort', 'limit', 'fields'];
     excludedFields.forEach(el => delete queryObj[el]);
 
-    // 2) Advanced filtering
     //{ difficulty: 'easy', duration: {gte: '5'} }
     //{ difficulty: 'easy', duration: {'$gte': '5'} }
     let queryStr = JSON.stringify(queryObj);
@@ -17,7 +16,10 @@ exports.getAllTours = async (req, res) => {
 
     const parsedQuery = JSON.parse(queryStr);
 
-    const tours = await Tour.find(parsedQuery);
+    // 1B) Sorting
+    const sort = req.query.sort;
+
+    const tours = await Tour.find(parsedQuery, sort);
     res.status(200).json({
       status: 'success',
       requestedAt: req.requestTime,
