@@ -1,86 +1,109 @@
 const pool = require('../database');
 
-exports.findAll = async queryObj => {
-const fieldMap = {
-  id: 'id',
-  name: 'name',
-  duration: 'duration',
-  maxGroupSize: 'max_group_size',
-  difficulty: 'difficulty',
-  ratingsAverage: 'ratings_average',
-  ratingsQuantity: 'ratings_quantity',
-  price: 'price',
-  summary: 'summary',
-  description: 'description',
-  imageCover: 'image_cover',
-  images: 'images',
-  startDates: 'start_dates'
-};
+exports.find = async (queryObj, sort, fields, limit, skip) => {
+  const fieldMap = {
+    id: 'id',
+    name: 'name',
+    duration: 'duration',
+    maxGroupSize: 'max_group_size',
+    difficulty: 'difficulty',
+    ratingsAverage: 'ratings_average',
+    ratingsQuantity: 'ratings_quantity',
+    price: 'price',
+    summary: 'summary',
+    description: 'description',
+    imageCover: 'image_cover',
+    images: 'images',
+    startDates: 'start_dates'
+  };
 
-const operatorMap = {
-  $gte: '>=',
-  $gt: '>',
-  $lte: '<=',
-  $lt: '<'
-};
+  const operatorMap = {
+    $gte: '>=',
+    $gt: '>',
+    $lte: '<=',
+    $lt: '<'
+  };
 
   const filters = [];
   const values = [];
-
+//duration: { gt: '5' },  difficulty: 'easy',  sort: [ 'price', 'duration' ]
   Object.keys(queryObj).forEach(key => {
-    const value = queryObj[key];  //price: { gte: '500' }, value = { gte: '500' }
-    const column = fieldMap[key]; // fieldMap[price] => column = 'price'
+    const value = queryObj[key];
+    const column = fieldMap[key];
 
     if (!column) return;
 
     if (typeof value === 'object' && value !== null) {
-      Object.keys(value).forEach(operator => { // key = gte , 
+      Object.keys(value).forEach(operator => {
         if (!operatorMap[operator]) return;
 
-        values.push(value[operator]); //value['gte'] = '500'
+        values.push(value[operator]);
         filters.push(`${column} ${operatorMap[operator]} $${values.length}`);
-      }); // price >= $2
+      });
     } else {
       values.push(value);
       filters.push(`${column} = $${values.length}`);
     }
   });
 
-  let query = 'SELECT * FROM tours';
+    // 1C) Field limiting
+  let selectedFields = '*';
+
+  if (fields) {
+    const requestedFields = fields
+      .split(',')
+      .map(field => fieldMap[field])
+      .filter(Boolean);
+
+    if (requestedFields.length > 0) {
+      selectedFields = requestedFields.join(', ');
+    }
+  }
+
+   let query = `SELECT ${selectedFields} FROM tours`;
 
   if (filters.length > 0) {
     query += ` WHERE ${filters.join(' AND ')}`;
   }
 
   // Sorting
-  if (sort) {
-    const sortBy = sort
-      .split(',')
-      .map(field => {
-        if (field.startsWith('-')) {
-          const column = fieldMap[field.slice(1)];
-          return column ? `${column} DESC` : null;
-        }
+if (sort) {
+  if (Array.isArray(sort)) {
+    sort = sort.join(',');
+  }
 
-        const column = fieldMap[field];
-        return column ? `${column} ASC` : null;
-      })
-      .filter(Boolean)
-      .join(', ');
+  const sortBy = sort
+    .split(',')
+    .map(field => {
+      if (field.startsWith('-')) {
+        const column = fieldMap[field.slice(1)];
+        return column ? `${column} DESC` : null;
+      }
 
-    if (sortBy) {
-      query += ` ORDER BY ${sortBy}`;
-    } else {
-      query += ' ORDER BY id';
-    }
+      const column = fieldMap[field];
+      return column ? `${column} ASC` : null;
+    })
+    .filter(Boolean)
+    .join(', ');
+
+  if (sortBy) {
+    query += ` ORDER BY ${sortBy}`;
   } else {
     query += ' ORDER BY id';
   }
-
-
+} else {
   query += ' ORDER BY id';
-  const result = await pool.query(query, values);
+}
 
+  // 1D) Pagination
+  query += ` LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;
+  values.push(limit, skip);
+
+  console.log(query);
+  console.log(values);
+
+  const result = await pool.query(query, values);
+  
   return result.rows;
 };
 

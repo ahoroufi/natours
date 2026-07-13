@@ -1,7 +1,9 @@
 const Tour = require('../models/tourModel');
 
 exports.getAllTours = async (req, res) => {
-// api/v1/tours?duration[gtn]=5&difficulty=easy
+//api/v1/tours?duration[gt]=5&difficulty=easy&sort=price&sort=duration
+// duration: { gt: '5' },  difficulty: 'easy',  sort: [ 'price', 'duration' ]
+
   try {
     // BUILD QUERY
     // 1A) Filtering
@@ -19,7 +21,16 @@ exports.getAllTours = async (req, res) => {
     // 1B) Sorting
     const sort = req.query.sort;
 
-    const tours = await Tour.find(parsedQuery, sort);
+    // 1C) Field limiting
+    const fields = req.query.fields;
+    
+    // 1D) Pagination
+    const page = req.query.page * 1 || 1;
+    const limit = req.query.limit * 1 || 100;
+    const skip = (page - 1) * limit;
+
+    const tours = await Tour.find(parsedQuery, sort, fields, limit, skip);
+
     res.status(200).json({
       status: 'success',
       requestedAt: req.requestTime,
