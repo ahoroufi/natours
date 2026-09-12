@@ -31,6 +31,13 @@ exports.getAllTours = async (req, res) => {
 
     const tours = await Tour.find(parsedQuery, sort, fields, limit, skip);
 
+    if (req.query.page && tours.length === 0) {
+      return res.status(404).json({
+        status: 'fail',
+        message: 'This page does not exist'
+      });
+    }
+
     res.status(200).json({
       status: 'success',
       requestedAt: req.requestTime,
