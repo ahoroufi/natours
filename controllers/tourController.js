@@ -1,4 +1,5 @@
 const Tour = require('../models/tourModel');
+const APIFeatures = require('../utils/apiFeatures');
 
 exports.aliasTopTours = (req, res, next) => {
   req.query.limit = '5';
@@ -8,35 +9,19 @@ exports.aliasTopTours = (req, res, next) => {
 };
 
 exports.getAllTours = async (req, res) => {
-//api/v1/tours?duration[gt]=5&difficulty=easy&sort=price&sort=duration
-// duration: { gt: '5' },  difficulty: 'easy',  sort: [ 'price', 'duration' ]
+  //api/v1/tours?duration[gt]=5&difficulty=easy&sort=price&sort=duration
+  // duration: { gt: '5' },  difficulty: 'easy',  sort: [ 'price', 'duration' ]
 
   try {
     // BUILD QUERY
-    // 1A) Filtering
-    const queryObj = { ...req.query };
-    const excludedFields = ['page', 'sort', 'limit', 'fields'];
-    excludedFields.forEach(el => delete queryObj[el]);
+    const features = new APIFeatures(Tour, req.query)
+      .filter()
+      .sort()
+      .limitFields()
+      .paginate();
 
-    //{ difficulty: 'easy', duration: {gte: '5'} }
-    //{ difficulty: 'easy', duration: {'$gte': '5'} }
-    let queryStr = JSON.stringify(queryObj);
-    queryStr = queryStr.replace(/\b(gte|gt|lte|lt)\b/g, match => `$${match}`);
-
-    const parsedQuery = JSON.parse(queryStr);
-
-    // 1B) Sorting
-    const sort = req.query.sort;
-
-    // 1C) Field limiting
-    const fields = req.query.fields;
-    
-    // 1D) Pagination
-    const page = req.query.page * 1 || 1;
-    const limit = req.query.limit * 1 || 100;
-    const skip = (page - 1) * limit;
-
-    const tours = await Tour.find(parsedQuery, sort, fields, limit, skip);
+    // EXECUTE QUERY
+    const tours = await features.execute();
 
     if (req.query.page && tours.length === 0) {
       return res.status(404).json({
