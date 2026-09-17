@@ -36,10 +36,10 @@ class APIFeatures {
     return this;
   }
 
-  // Our PostgreSQL model executes find() immediately, so run it after building
+  // Our PostgreSQL model executes findAll() immediately, so run it after building
   // all the options instead of chaining methods on a Mongoose query.
   execute() {
-    return this.model.find(
+    return this.model.findAll(
       this.queryObj,
       this.sortBy,
       this.fields,

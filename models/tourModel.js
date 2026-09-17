@@ -1,7 +1,6 @@
 const pool = require('../database');
 
-exports.find = async (queryObj, sort, fields, limit, skip) => {
-  const fieldMap = {
+const fieldMap = {
     id: 'id',
     name: 'name',
     duration: 'duration',
@@ -13,9 +12,18 @@ exports.find = async (queryObj, sort, fields, limit, skip) => {
     summary: 'summary',
     description: 'description',
     imageCover: 'image_cover',
-    images: 'images',
-    startDates: 'start_dates'
+    images: 'images'
   };
+
+exports.fieldMap = fieldMap;
+
+async function readTour(client, id) {
+  const result = await client.query('SELECT * FROM tours WHERE id = $1', [id]);
+  return result.rows[0];
+}
+
+exports.findAll = async (queryObj, sort, fields, limit, skip) => {
+
 
   const operatorMap = {
     $gte: '>=',
@@ -46,21 +54,18 @@ exports.find = async (queryObj, sort, fields, limit, skip) => {
     }
   });
 
-  // 1C) Field limiting
-  let selectedFields = '*';
+  // startDates belongs to departures; all other fields belong to tours.
+  const requestedFields = fields
+    ? fields.split(',').filter(field => field === 'startDates' || fieldMap[field])
+    : [];
+  const limited = requestedFields.length > 0;
+  const columns = requestedFields
+    .filter(field => field !== 'startDates')
+    .map(field => fieldMap[field]);
 
-  ///api/v1/tours?fields=name,price,imageCover
-  if (fields) {
-    const requestedFields = fields // 'name,price,imageCover'
-      .split(',')
-      .map(field => fieldMap[field]) //['name', 'price', 'image_cover']
-      .filter(Boolean);
-
-    if (requestedFields.length > 0) {
-      selectedFields = requestedFields.join(', '); // 'name, price, image_cover'
-    }
-  }
-
+  // The ID links departures to tours, even if it is omitted from the response.
+  if (limited && !columns.includes('id')) columns.push('id');
+  const selectedFields = limited ? columns.join(', ') : '*';
   let query = `SELECT ${selectedFields} FROM tours`;
 
   if (filters.length > 0) {
@@ -104,24 +109,38 @@ exports.find = async (queryObj, sort, fields, limit, skip) => {
   return result.rows;
 };
 
-exports.getById = async id => {
+exports.getStats = async () => {
+  // MongoDB's $match becomes WHERE; $group becomes GROUP BY with aggregates.
+  // Cast aggregates to double precision so pg returns JSON numbers, not strings.
   const result = await pool.query(
-    `SELECT *
-     FROM tours 
-     WHERE id = $1`,
-    [id]
+    `SELECT
+       UPPER(difficulty) AS "_id",
+       COUNT(*)::double precision AS "numTours",
+       COALESCE(SUM(ratings_quantity), 0)::double precision AS "numRatings",
+       AVG(ratings_average)::double precision AS "avgRating",
+       AVG(price)::double precision AS "avgPrice",
+       MIN(price)::double precision AS "minPrice",
+       MAX(price)::double precision AS "maxPrice"
+     FROM tours
+     WHERE ratings_average >= $1
+     GROUP BY UPPER(difficulty)
+     ORDER BY "avgPrice" ASC`,
+    [4.5]
   );
-  return result.rows[0];
+
+  return result.rows;
 };
 
-exports.create = async tour => {
-  const result = await pool.query(
+exports.getById = async (id, client = pool) => readTour(client, id);
+
+exports.create = async (tour, client = pool) => {
+  const result = await client.query(
     `INSERT INTO tours (
       name, duration, max_group_size, difficulty,
       ratings_average, ratings_quantity, price,
-      summary, description, image_cover, images, start_dates
+      summary, description, image_cover, images
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     RETURNING *`,
     [
       tour.name,
@@ -134,15 +153,18 @@ exports.create = async tour => {
       tour.summary,
       tour.description,
       tour.imageCover,
-      JSON.stringify(tour.images || []),
-      JSON.stringify(tour.startDates || [])
+      JSON.stringify(tour.images || [])
     ]
   );
 
   return result.rows[0];
 };
 
-exports.update = async (id, tour) => {
+exports.update = async (id, tour, client = pool) => {
+  const existing = await client.query(
+    'SELECT id FROM tours WHERE id = $1 FOR UPDATE', [id]
+  );
+  if (!existing.rows[0]) return undefined;
   const fieldMap = {
     name: 'name',
     duration: 'duration',
@@ -154,34 +176,33 @@ exports.update = async (id, tour) => {
     summary: 'summary',
     description: 'description',
     imageCover: 'image_cover',
-    images: 'images',
-    startDates: 'start_dates'
+    images: 'images'
   };
 
   const fields = Object.keys(tour);
+  if (fields.some(field => !Object.prototype.hasOwnProperty.call(fieldMap, field))) {
+    throw new Error('Unknown tour field');
+  }
 
   const setString = fields
     .map((field, index) => `${fieldMap[field]} = $${index + 1}`)
     .join(', ');
 
   const values = fields.map(field => {
-    if (field === 'images' || field === 'startDates') {
+    if (field === 'images') {
       return JSON.stringify(tour[field]);
     }
 
     return tour[field];
   });
 
-  const result = await pool.query(
-    `UPDATE tours
-     SET ${setString}
-     WHERE id = $${fields.length + 1}
-     RETURNING *
-     `,
-    [...values, id]
-  );
-
-  return result.rows[0];
+  if (fields.length > 0) {
+    await client.query(
+      `UPDATE tours SET ${setString} WHERE id = $${fields.length + 1}`,
+      [...values, id]
+    );
+  }
+  return readTour(client, id);
 };
 
 exports.delete = async id => {
